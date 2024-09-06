@@ -1,0 +1,36 @@
+* {
+  box-sizing: border-box;
+}
+
+#container {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.work {
+  margin: 12px;
+  background-color: #FAFAFA;
+  border-radius: 8px;
+  border-width: 0.5px;
+  border-color: #F5F5F5;
+  border-style: solid;
+}
+
+.work>div {
+  padding: 8px;
+}
+
+.work>div>img {
+  aspect-ratio: 1;
+  width: 240px;
+}
+
+.work>div:last-child {
+  display: grid;
+  grid-template-columns: 1;
+  font-size: larger;
+  border-style: solid none none none;
+  border-color: #E0E0E0;
+  border-width: 2px;
+  border-top-right-radius: 40px;
+}
