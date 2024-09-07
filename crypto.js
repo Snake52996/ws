@@ -47,19 +47,23 @@ async function main() {
     async function process(name) {
       // prepare iv
       const iv = crypto.getRandomValues(new Uint8Array(12));
+      // prepare new name of the picture: do not leak filenames
+      const new_name = crypto.randomUUID();
       async function process_image() {
         const image = await Deno.readFile(`${name}.webp`);
         const encrypted_body = new Uint8Array(await crypto.subtle.encrypt(
           { name: "AES-GCM", iv: iv }, key, image.slice(ImageHeaderSize)
         ));
-        await Deno.writeFile(`${name}.webp`, image.slice(0, ImageHeaderSize));
-        await Deno.writeFile(`${name}.webp`, encrypted_body, { append: true });
+        await Deno.writeFile(`${new_name}.webp`, image.slice(0, ImageHeaderSize));
+        await Deno.writeFile(`${new_name}.webp`, encrypted_body, { append: true });
+        await Deno.remove(`${name}.webp`);
       }
       async function process_information() {
         const information = await Deno.readTextFile(`${name}.json`);
         await Deno.remove(`${name}.json`);
         list[name] = {
           image_iv: btoa(String.fromCharCode.apply(null, iv)),
+          new_name: new_name,
           information: information,
         };
       }
@@ -134,14 +138,15 @@ async function main() {
 
     async function process_deno(name) {
       const write_information = Deno.writeTextFile(`${name}.json`, list[name]["information"]);
-      const encrypted_image = await Deno.readFile(`${name}.webp`);
+      const encrypted_image = await Deno.readFile(`${list[name]["new_name"]}.webp`);
       const image = await decrypt_image(encrypted_image, list[name]);
       await Deno.writeFile(`${name}.webp`, image);
+      await Deno.remove(`${list[name]["new_name"]}.webp`);
       await write_information;
     }
 
     async function process_browser(name) {
-      const response = await fetch(new Request(`${name}.webp`));
+      const response = await fetch(new Request(`${list[name]["new_name"]}.webp`));
       const encrypted_image = new Uint8Array(await response.arrayBuffer());
       const image = await decrypt_image(encrypted_image, list[name]);
       const information = JSON.parse(list[name]["information"]);
