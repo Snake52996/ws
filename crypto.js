@@ -1,10 +1,42 @@
-// ask for password
+// ==UserScript==
+// @name        WS progress tracker
+// @namespace   Violentmonkey Scripts
+// @match
+// @grant       GM_addStyle
+// @version     1.0
+// ==/UserScript==
+
+// ws progress tracker
+// this script may run in three different environments:
+//  1. running locally with Deno that encrypts/decrypts local files
+//  2. running in web browser that decrypt files into memory and renders to webpage
+//  3. running as user script injected to certain website that shows tracked work
+
 const deno = typeof Deno !== 'undefined';
+const injected = typeof GM_addStyle !== 'undefined';
+const host = injected ? "https://snake.moe/ws/" : "";
 const ImageHeaderSize = 12;
 const MetaKey = ["iv", "encrypted_name"];
 async function main() {
-  // ask password and prepare it as a base crypto key
-  const password = prompt("Please enter the password:");
+  async function get_password() {
+    // get password and prepare it as a base crypto key
+    // when running as injected user script, try to read cached key from local storage first
+    const StorageKey = "637bb179-5430-4e38-955a-9de04940e205";
+    if (injected) {
+      let cached = localStorage.getItem(StorageKey);
+      if (cached !== null) {
+        return cached;
+      }
+    }
+    let password = prompt("Please enter the password:");
+    // cache it if running as user script
+    if (injected) {
+      localStorage.setItem(StorageKey, password);
+    }
+    return password;
+  }
+
+  const password = await get_password();
   const encoder = new TextEncoder();
   const encoded_password = encoder.encode(password);
   const base_key = await crypto.subtle.importKey("raw", encoded_password, "PBKDF2", false, ["deriveKey"]);
@@ -32,7 +64,7 @@ async function main() {
   }
 
   // load metadata from file
-  const meta_string = deno ? Deno.readTextFile("meta.json") : (await fetch(new Request("meta.json"))).text();
+  const meta_string = deno ? Deno.readTextFile("meta.json") : (await fetch(new Request(`${host}meta.json`))).text();
   const metadata = JSON.parse(await meta_string);
   const PBKDF2Parameter = {
     ...metadata.pbkdf2,
@@ -123,7 +155,7 @@ async function main() {
     if (deno) {
       raw_string = await Deno.readTextFile("data.json");
     } else {
-      const response = await fetch(new Request("data.json"));
+      const response = await fetch(new Request(`${host}data.json`));
       raw_string = await response.text();
     }
     const final_list = JSON.parse(raw_string);
@@ -136,6 +168,44 @@ async function main() {
     const decoder = new TextDecoder("utf-8");
     const list = JSON.parse(decoder.decode(encoded_list));
     console.log(list);
+
+    async function handle_user_script() {
+      // we do not decrypt image or prepare detailed information when running as user script
+      //  therefore, we use a dedicated function to handle such case so that we can return early
+      // we only care about the word ID
+      const tracked_work = Object.keys(list);
+      // prepare CSS style
+      GM_addStyle(`
+        div.tracked {
+          filter: blur(5px);
+          transition-duration: 0.4s;
+        }
+        div.tracked:hover {
+          filter: none;
+        }
+      `);
+      // prepare callback for observer
+      function observer_callback(records, observer) {
+        for (let record of records) {
+          if (record.type !== "childList") {
+            continue;
+          }
+          for (let node of record.addedNodes) {
+            if (tracked_work.includes(node.id)) {
+              node.classList.add("tracked");
+            }
+          }
+        }
+      }
+      // register observer
+      let observer = new MutationObserver(observer_callback);
+      const target = document.querySelector("main>div:nth-child(2)");
+      observer.observe(target, { childList: true });
+    }
+    if (injected) {
+      handle_user_script();
+      return;
+    }
 
     // get container if running in browser
     const container = deno ? null : document.getElementById("container");
