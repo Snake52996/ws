@@ -17,6 +17,7 @@ const injected = typeof GM_addStyle !== 'undefined';
 const host = injected ? "https://snake.moe/ws/" : "";
 const ImageHeaderSize = 12;
 const MetaKey = ["iv", "encrypted_name"];
+const PlainDirectoryName = "plain-data";
 async function main() {
   async function get_password() {
     // get password and prepare it as a base crypto key
@@ -34,6 +35,19 @@ async function main() {
       localStorage.setItem(StorageKey, password);
     }
     return password;
+  }
+
+  function compare_object(lhs, rhs) {
+    let result;
+    if (typeof lhs !== typeof rhs) {
+      result = false;
+    } else if (typeof lhs !== "object") {
+      result = lhs === rhs;
+    } else {
+      const keys = Object.keys(lhs);
+      result = keys.map(key => (compare_object(lhs[key], rhs[key]))).every(value => value);
+    }
+    return result;
   }
 
   const password = await get_password();
@@ -64,7 +78,9 @@ async function main() {
   }
 
   // load metadata from file
-  const meta_string = deno ? Deno.readTextFile("meta.json") : (await fetch(new Request(`${host}meta.json`))).text();
+  const meta_string = deno
+    ? Deno.readTextFile("meta.json")
+    : (await fetch(new Request(`${host}meta.json`))).text();
   const metadata = JSON.parse(await meta_string);
   const PBKDF2Parameter = {
     ...metadata.pbkdf2,
@@ -81,78 +97,15 @@ async function main() {
     ["encrypt", "decrypt"]
   );
 
-
-  // encryption mode is used only when running on Deno
-  if (deno && Deno.args[0] === "encrypt") {
-    // encrypt data files:
-    //  1. (webp) images are encrypted in-place with their file header unchanged
-    //  2. JSON files are combined together and encrypted into a single file
-
-    // list files and generate list of names to be processed
-    let name_list = new Array();
-    for (const entry of Deno.readDirSync(".")) {
-      if (!entry.isFile) { continue; }
-      if (!entry.name.endsWith(".webp")) { continue; }
-      name_list.push(entry.name.slice(0, -5));
-    }
-    console.log(name_list);
-
-    let list = {};
-
-    // function to handle a single name
-    async function process(name) {
-      const information = JSON.parse(await Deno.readTextFile(`${name}.json`));
-      if(!Object.keys(information).includes("iv")){
-        const iv = crypto.getRandomValues(new Uint8Array(12));
-        information["iv"] = btoa(String.fromCharCode.apply(null, iv));
-      }
-      if(!Object.keys(information).includes("encrypted_name")){
-        information["encrypted_name"] = crypto.randomUUID();
-      }
-      // prepare iv
-      const iv = Uint8Array.from(Array.from(atob(information.iv)).map(x => x.charCodeAt(0)));
-      // prepare new name of the picture: do not leak filenames
-      const new_name = information.encrypted_name;
-      async function process_image() {
-        const image = await Deno.readFile(`${name}.webp`);
-        const encrypted_body = new Uint8Array(await crypto.subtle.encrypt(
-          { name: "AES-GCM", iv: iv }, key, image.slice(ImageHeaderSize)
-        ));
-        await Deno.writeFile(`${new_name}.webp`, image.slice(0, ImageHeaderSize));
-        await Deno.writeFile(`${new_name}.webp`, encrypted_body, { append: true });
-        await Deno.remove(`${name}.webp`);
-      }
-      async function process_information() {
-        await Deno.remove(`${name}.json`);
-        list[name] = information;
-      }
-      return Promise.all([process_image(), process_information()]);
-    }
-
-    // process files
-    await Promise.all(name_list.map((name) => process(name)));
-
-    console.log(list);
-
-    // encrypt information list
-    const encoded_list = encoder.encode(JSON.stringify(list));
-    const iv = crypto.getRandomValues(new Uint8Array(12));
-    const encrypted_list = new Uint8Array(await crypto.subtle.encrypt(
-      { name: "AES-GCM", iv: iv }, key, encoded_list
-    ));
-    let final_list = {
-      iv: btoa(String.fromCharCode.apply(null, iv)),
-      data: btoa(String.fromCharCode.apply(null, encrypted_list)),
-    };
-    await Deno.writeTextFile("data.json", JSON.stringify(final_list));
-  } else {
-    // decrypt may happen on both Deno (when checking out) and browser
-    // when running on Deno, do the reverse process of encryption
-    // when in a browser, decrypt and render information on to the page
-
+  async function load_data() {
     // load information
     let raw_string;
     if (deno) {
+      try {
+        Deno.statSync("data.json");
+      } catch (error) {
+        return {};
+      }
       raw_string = await Deno.readTextFile("data.json");
     } else {
       const response = await fetch(new Request(`${host}data.json`));
@@ -168,6 +121,91 @@ async function main() {
     const decoder = new TextDecoder("utf-8");
     const list = JSON.parse(decoder.decode(encoded_list));
     console.log(list);
+    return list;
+  }
+
+  // to make sure that no failure occurred during the execution of this script can put us in an intermediate
+  //  state, a temporary directory is employed and all decrypted files are put in it
+  if (deno) {
+    Deno.mkdirSync(PlainDirectoryName, { recursive: true });
+  }
+
+  // encryption mode is used only when running on Deno
+  if (deno && Deno.args[0] === "encrypt") {
+    // encrypt data files:
+    //  1. (webp) images are encrypted in-place with their file header unchanged
+    //  2. JSON files are combined together and encrypted into a single file
+
+    // list files and generate list of names to be processed
+    let name_list = new Array();
+    for (const entry of Deno.readDirSync(PlainDirectoryName)) {
+      if (!entry.isFile) { continue; }
+      if (!entry.name.endsWith(".webp")) { continue; }
+      name_list.push(entry.name.slice(0, -5));
+    }
+    console.log(name_list);
+
+    let list = {};
+
+    // function to handle a single name
+    async function process(name) {
+      const information = JSON.parse(await Deno.readTextFile(`${PlainDirectoryName}/${name}.json`));
+      if(!Object.keys(information).includes("iv")){
+        const iv = crypto.getRandomValues(new Uint8Array(12));
+        information["iv"] = btoa(String.fromCharCode.apply(null, iv));
+      }
+      if(!Object.keys(information).includes("encrypted_name")){
+        information["encrypted_name"] = crypto.randomUUID();
+      }
+      // prepare iv
+      const iv = Uint8Array.from(Array.from(atob(information.iv)).map(x => x.charCodeAt(0)));
+      // prepare new name of the picture: do not leak filenames
+      const new_name = information.encrypted_name;
+      async function process_image() {
+        const image = await Deno.readFile(`${PlainDirectoryName}/${name}.webp`);
+        const encrypted_body = new Uint8Array(await crypto.subtle.encrypt(
+          { name: "AES-GCM", iv: iv }, key, image.slice(ImageHeaderSize)
+        ));
+        await Deno.writeFile(`${new_name}.webp`, image.slice(0, ImageHeaderSize));
+        await Deno.writeFile(`${new_name}.webp`, encrypted_body, { append: true });
+      }
+      async function process_information() {
+        list[name] = information;
+      }
+      return Promise.all([process_image(), process_information()]);
+    }
+
+    // process files
+    await Promise.all(name_list.map((name) => process(name)));
+
+    console.log(list);
+
+    // encrypt information list
+    // We first decrypt the encrypted data file again if which exists and check if any modification have been
+    //  made. If the data file is not changed, we shall not rewrite it. This ensures that no extra commit will
+    //  be made.
+    const last_list = await load_data();
+    if (!compare_object(last_list, list)) {
+      const encoded_list = encoder.encode(JSON.stringify(list));
+      const iv = crypto.getRandomValues(new Uint8Array(12));
+      const encrypted_list = new Uint8Array(await crypto.subtle.encrypt(
+        { name: "AES-GCM", iv: iv }, key, encoded_list
+      ));
+      let final_list = {
+        iv: btoa(String.fromCharCode.apply(null, iv)),
+        data: btoa(String.fromCharCode.apply(null, encrypted_list)),
+      };
+      await Deno.writeTextFile("data.json", JSON.stringify(final_list));
+    }
+
+    // we are done here, finally we can delete the directory
+    await Deno.remove(PlainDirectoryName, { recursive: true });
+  } else {
+    // decrypt may happen on both Deno (when checking out) and browser
+    // when running on Deno, do the reverse process of encryption
+    // when in a browser, decrypt and render information on to the page
+
+    const list = await load_data();
 
     async function handle_user_script() {
       // we do not decrypt image or prepare detailed information when running as user script
@@ -224,22 +262,28 @@ async function main() {
     }
 
     async function process_deno(name) {
-      const write_information = Deno.writeTextFile(`${name}.json`, JSON.stringify(list[name]));
+      const write_information = Deno.writeTextFile(
+        `${PlainDirectoryName}/${name}.json`,
+        JSON.stringify(list[name])
+      );
       const encrypted_image = await Deno.readFile(`${list[name].encrypted_name}.webp`);
       const image = await decrypt_image(encrypted_image, list[name]);
-      await Deno.writeFile(`${name}.webp`, image);
-      await Deno.remove(`${list[name].encrypted_name}.webp`);
+      await Deno.writeFile(`${PlainDirectoryName}/${name}.webp`, image);
       await write_information;
     }
 
     async function process_browser(name) {
-      const response = await fetch(new Request(`${list[name].encrypted_name}.webp`));
-      const encrypted_image = new Uint8Array(await response.arrayBuffer());
-      const image = await decrypt_image(encrypted_image, list[name]);
+      async function load_on_click(event) {
+        const response = await fetch(new Request(event.target.dataset.source));
+        const encrypted_image = new Uint8Array(await response.arrayBuffer());
+        const image = await decrypt_image(encrypted_image, list[event.target.dataset.name]);
+        const blob = new Blob([image], { type: 'image/webp' });
+        const url = URL.createObjectURL(blob);
+        event.target.src = url;
+      }
       const information = list[name];
 
       // build node
-
       let work = document.createElement("div");
       work.classList.add("work");
       let cover_container = document.createElement("div");
@@ -248,9 +292,9 @@ async function main() {
       let spacer1 = document.createElement("span");
       spacer1.classList.add("spacer");
       let cover = document.createElement("img");
-      const blob = new Blob([image], { type: 'image/webp' });
-      const url = URL.createObjectURL(blob);
-      cover.src = url;
+      cover.dataset.source = `${list[name].encrypted_name}.webp`;
+      cover.dataset.name = name;
+      cover.addEventListener("click", load_on_click);
       let information_container = document.createElement("div");
       for (const key of Object.keys(information)) {
         if(MetaKey.includes(key)){
@@ -273,9 +317,6 @@ async function main() {
     const processor = deno ? process_deno : process_browser;
     // process all targets
     await Promise.all(Object.keys(list).map((name) => processor(name)));
-    if (deno) {
-      await Deno.remove("data.json")
-    }
   }
 
 }
