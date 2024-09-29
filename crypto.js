@@ -45,7 +45,11 @@ async function main() {
       result = lhs === rhs;
     } else {
       const keys = Object.keys(lhs);
-      result = keys.map(key => (compare_object(lhs[key], rhs[key]))).every(value => value);
+      if (keys.length !== Object.keys(rhs).length) {
+        result = false;
+      } else {
+        result = keys.map(key => (compare_object(lhs[key], rhs[key]))).every(value => value);
+      }
     }
     return result;
   }
@@ -57,8 +61,8 @@ async function main() {
 
   // create a new meta.json file containing encrypting parameters if one does not exist
   // this may only happen when running on Deno/encrypting
-  if(deno){
-    try{
+  if (deno) {
+    try {
       Deno.statSync("meta.json");
     } catch (error) {
       const salt = crypto.getRandomValues(new Uint8Array(16));
@@ -150,11 +154,11 @@ async function main() {
     // function to handle a single name
     async function process(name) {
       const information = JSON.parse(await Deno.readTextFile(`${PlainDirectoryName}/${name}.json`));
-      if(!Object.keys(information).includes("iv")){
+      if (!Object.keys(information).includes("iv")) {
         const iv = crypto.getRandomValues(new Uint8Array(12));
         information["iv"] = btoa(String.fromCharCode.apply(null, iv));
       }
-      if(!Object.keys(information).includes("encrypted_name")){
+      if (!Object.keys(information).includes("encrypted_name")) {
         information["encrypted_name"] = crypto.randomUUID();
       }
       // prepare iv
@@ -297,7 +301,7 @@ async function main() {
       cover.addEventListener("click", load_on_click);
       let information_container = document.createElement("div");
       for (const key of Object.keys(information)) {
-        if(MetaKey.includes(key)){
+        if (MetaKey.includes(key)) {
           continue;
         }
         let node = document.createElement("span");
