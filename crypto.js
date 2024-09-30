@@ -54,6 +54,36 @@ async function main() {
     return result;
   }
 
+
+  function compare_works(old_list, new_list) {
+    // return if there two lists are identical
+    const old_works = Object.keys(old_list);
+    const new_works = Object.keys(new_list);
+    const shared_works = new Array();
+    let result = true;
+    for (const key of old_works) {
+      if (!new_works.includes(key)) {
+        result = false;
+        console.log("Remove: ", old_works[key]);
+      } else {
+        shared_works.push(key);
+      }
+    }
+    for (const key of new_list) {
+      if (!old_list.includes(key)) {
+        result = false;
+        console.log("Add: ", new_list[key]);
+      }
+    }
+    for (const key of shared_works) {
+      if (!compare_object(old_list[key], new_list[key])) {
+        result = false;
+        console.log("Change: ", old_list[key], " --> ", new_list[key]);
+      }
+    }
+    return result;
+  }
+
   const password = await get_password();
   const encoder = new TextEncoder();
   const encoded_password = encoder.encode(password);
@@ -124,7 +154,6 @@ async function main() {
     // decode information and prepare as object
     const decoder = new TextDecoder("utf-8");
     const list = JSON.parse(decoder.decode(encoded_list));
-    console.log(list);
     return list;
   }
 
@@ -147,7 +176,6 @@ async function main() {
       if (!entry.name.endsWith(".webp")) { continue; }
       name_list.push(entry.name.slice(0, -5));
     }
-    console.log(name_list);
 
     let list = {};
 
@@ -182,14 +210,12 @@ async function main() {
     // process files
     await Promise.all(name_list.map((name) => process(name)));
 
-    console.log(list);
-
     // encrypt information list
     // We first decrypt the encrypted data file again if which exists and check if any modification have been
     //  made. If the data file is not changed, we shall not rewrite it. This ensures that no extra commit will
     //  be made.
     const last_list = await load_data();
-    if (!compare_object(last_list, list)) {
+    if (!compare_works(last_list, list)) {
       const encoded_list = encoder.encode(JSON.stringify(list));
       const iv = crypto.getRandomValues(new Uint8Array(12));
       const encrypted_list = new Uint8Array(await crypto.subtle.encrypt(
