@@ -69,8 +69,8 @@ async function main() {
         shared_works.push(key);
       }
     }
-    for (const key of new_list) {
-      if (!old_list.includes(key)) {
+    for (const key of new_works) {
+      if (!old_works.includes(key)) {
         result = false;
         console.log("Add: ", new_list[key]);
       }
