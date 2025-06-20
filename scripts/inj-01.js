@@ -17,22 +17,20 @@ async function main() {
   const data = await get_data(StorageKey);
   const tracked_work = Object.keys(data);
 
-  window.addEventListener("load", (() => {
-    const list = document.getElementById("search_result_img_box");
-    if (list === null) { return; }
+  const list = document.getElementById("search_result_img_box");
+  if (list === null) { return; }
 
-    add_style(`.tracked {
+  add_style(`.tracked {
   filter: blur(5px);
   transition-duration: 0.4s;
 }
 .tracked:hover {
   filter: none;
 }`);
-    for (const node of list.children) {
-      if (tracked_work.includes(node.dataset.list_item_product_id)) {
-        node.classList.add("tracked");
-      }
+  for (const node of list.children) {
+    if (tracked_work.includes(node.dataset.list_item_product_id)) {
+      node.classList.add("tracked");
     }
-  }));
+  }
 }
 main();
