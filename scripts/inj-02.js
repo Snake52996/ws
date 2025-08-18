@@ -30,4 +30,9 @@ async function main() {
     }
   }
 }
-main();
+try {
+  main();
+  document.dispatchEvent(new CustomEvent("injected_script_launched_successfully"));
+} catch (error) {
+  document.dispatchEvent(new CustomEvent("injected_script_launch_failed"));
+}
