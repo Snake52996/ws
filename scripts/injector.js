@@ -3,7 +3,7 @@
 // @namespace   Violentmonkey Scripts
 // @match       *://*/*
 // @grant       GM_addStyle
-// @version     1.3
+// @version     1.4
 // ==/UserScript==
 (() => {
   const script_host = "https://snake.moe/ws/scripts";
