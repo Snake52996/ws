@@ -122,9 +122,9 @@ async function main() {
   }
   handle_user_script();
 }
-try {
-  main();
+main().then(() => {
   document.dispatchEvent(new CustomEvent("injected_script_launched_successfully"));
-} catch (error) {
+}).catch((reason) => {
+  console.error(reason);
   document.dispatchEvent(new CustomEvent("injected_script_launch_failed"));
-}
+});

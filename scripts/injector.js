@@ -37,6 +37,7 @@
         border-style: solid;
         border-width: 6px;
         border-radius: 50%;
+        box-sizing: border-box;
       }
       .indicator-loading {
         border-color: #c0c0c0;
@@ -61,7 +62,7 @@
       failed: function () {
         indicator.classList.remove(`indicator-${_helper.status}`);
         indicator.classList.add("indicator-failed");
-        indicator.addEventListener("click", () => { retry_callable(); _helper.loading(); });
+        indicator.addEventListener("click", () => { retry_callable(); _helper.loading(); }, { once: true });
         _helper.status = "failed";
       },
       succeed: function () {
@@ -72,11 +73,21 @@
       loading: function () {
         indicator.classList.remove(`indicator-${_helper.status}`);
         indicator.classList.add("indicator-loading");
-        indicator.removeEventListener("click", retry_callable);
         _helper.status = "loading";
       },
     }
     return _helper;
+  }
+  function inject_script(url, indicator) {
+    const node = document.createElement("script");
+    node.type = "module";
+    node.src = `${url}?v=${Math.random()}`;
+    node.addEventListener(
+      "error",
+      () => { document.body.removeChild(node); indicator.failed(); },
+      { once: true }
+    );
+    document.body.appendChild(node);
   }
   async function injection_proxy() {
     const _SALT = "a3d358cc-e7c9-4b21-af32-92cc654a4798";
@@ -89,17 +100,14 @@
       return;
     }
     const url = `${script_host}/${script_map[hex]}`;
-    const node = document.createElement("script");
-    node.type = "module";
-    node.src = url;
-    const indicator = create_indicator(() => {
-      document.body.removeChild(node);
-      document.body.appendChild(node);
-    });
-    node.addEventListener("error", () => { indicator.failed(); });
+    const indicator = create_indicator(() => { inject_script(url, indicator); });
     document.addEventListener("injected_script_launch_failed", () => { indicator.failed(); });
-    document.addEventListener("injected_script_launched_successfully", () => { indicator.succeed(); });
-    document.body.appendChild(node);
+    document.addEventListener(
+      "injected_script_launched_successfully",
+      () => { indicator.succeed(); },
+      { once: true }
+    );
+    inject_script(url, indicator);
   }
   injection_proxy();
 })();
